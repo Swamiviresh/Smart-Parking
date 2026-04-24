@@ -66,11 +66,15 @@ export default function Dashboard() {
     };
   }, [loadSlots, loadBookings]);
 
-  const handleBook = async (slotId, durationHours) => {
+  const handleBook = async (slotId, durationHours, startTime) => {
     try {
-      const { data } = await api.post('/slots/book', { slot_id: slotId, duration_hours: durationHours });
+      const { data } = await api.post('/slots/book', {
+        slot_id: slotId,
+        duration_hours: durationHours,
+        start_time: startTime
+      });
       showNotif(
-        `Booked ${data.slot_number} (Level ${data.level}) until ${new Date(data.expires_at).toLocaleTimeString()}`,
+        `Booked ${data.slot_number} (Level ${data.level}) starting ${new Date(data.start_time).toLocaleString()} until ${new Date(data.expires_at).toLocaleTimeString()}`,
         'success'
       );
       loadSlots();

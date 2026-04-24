@@ -32,11 +32,21 @@ async function initDB() {
       user_id INTEGER NOT NULL,
       slot_id INTEGER NOT NULL,
       booked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      start_time DATETIME NOT NULL,
       duration_hours INTEGER NOT NULL DEFAULT 1,
       expires_at DATETIME NOT NULL,
       status TEXT DEFAULT 'active'
     )
   `);
+
+  // Migration: Add start_time to bookings if it doesn't exist
+  try {
+    await client.execute(`ALTER TABLE bookings ADD COLUMN start_time DATETIME`);
+    // For existing bookings, set start_time to booked_at
+    await client.execute(`UPDATE bookings SET start_time = booked_at WHERE start_time IS NULL`);
+  } catch (err) {
+    // Column might already exist
+  }
 
   // Seed slots if empty
   const slots = await client.execute(`SELECT COUNT(*) as count FROM parking_slots`);

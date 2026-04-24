@@ -8,13 +8,22 @@ router.use(authenticateToken, requireAdmin);
 
 router.get('/slots', async (req, res) => {
   try {
-    const result = await client.execute(`
-      SELECT ps.id, ps.slot_number, ps.status, ps.level,
-             b.expires_at
-      FROM parking_slots ps
-      LEFT JOIN bookings b ON ps.id = b.slot_id AND b.status = 'active'
-      ORDER BY ps.id
-    `);
+    const now = new Date().toISOString();
+    const result = await client.execute({
+      sql: `
+        SELECT ps.id, ps.slot_number, ps.level,
+               b.start_time, b.expires_at,
+               CASE
+                 WHEN b.id IS NOT NULL AND b.start_time <= ? AND b.expires_at > ? THEN 'booked'
+                 ELSE 'available'
+               END as status
+        FROM parking_slots ps
+        LEFT JOIN bookings b ON ps.id = b.slot_id AND b.status = 'active'
+             AND b.start_time <= ? AND b.expires_at > ?
+        ORDER BY ps.id
+      `,
+      args: [now, now, now, now]
+    });
     return res.status(200).json(result.rows);
   } catch (err) {
     console.error('Admin get slots error:', err);
@@ -26,7 +35,7 @@ router.get('/bookings', async (req, res) => {
   try {
     const result = await client.execute(`
       SELECT b.id, u.name AS user_name, u.email AS user_email,
-             ps.slot_number, ps.level, b.booked_at, b.duration_hours, b.expires_at, b.status
+             ps.slot_number, ps.level, b.booked_at, b.start_time, b.duration_hours, b.expires_at, b.status
       FROM bookings b
       JOIN users u ON b.user_id = u.id
       JOIN parking_slots ps ON b.slot_id = ps.id

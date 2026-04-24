@@ -31,10 +31,10 @@ export default function BookingItem({ booking, onCancel }) {
           </span>
         </div>
         <span className="text-xs text-slate-400">
-          Booked at: {new Date(booking.booked_at).toLocaleString()}
+          From: {new Date(booking.start_time).toLocaleString()}
         </span>
         <span className="text-xs text-slate-400">
-          Expires at: {new Date(booking.expires_at).toLocaleString()}
+          To: {new Date(booking.expires_at).toLocaleString()}
         </span>
         <span className="text-sm text-blue font-medium">
           {getTimeRemaining(booking.expires_at)}

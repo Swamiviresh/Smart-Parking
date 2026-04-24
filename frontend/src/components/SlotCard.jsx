@@ -21,6 +21,11 @@ function getTimeRemaining(expiresAt) {
 export default function SlotCard({ slot, onBook, readOnly = false }) {
   const [showPicker, setShowPicker] = useState(false);
   const [duration, setDuration] = useState('1');
+  const [startTime, setStartTime] = useState(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
   const [loading, setLoading] = useState(false);
 
   const isAvailable = slot.status === 'available';
@@ -28,7 +33,7 @@ export default function SlotCard({ slot, onBook, readOnly = false }) {
 
   const handleConfirm = async () => {
     setLoading(true);
-    await onBook(slot.id, parseInt(duration));
+    await onBook(slot.id, parseInt(duration), startTime);
     setLoading(false);
     setShowPicker(false);
   };
@@ -70,12 +75,20 @@ export default function SlotCard({ slot, onBook, readOnly = false }) {
             transition={{ duration: 0.25 }}
             className="overflow-hidden"
           >
-            <div className="mt-3 pt-3 border-t border-slate-700">
-              <label className="text-xs text-slate-400 block mb-1">Duration</label>
+            <div className="mt-3 pt-3 border-t border-slate-700 text-left">
+              <label className="text-[0.7rem] text-slate-400 block mb-1">Start Time</label>
+              <input
+                type="datetime-local"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="w-full p-2 bg-navy border border-slate-600 rounded-lg text-white text-xs mb-3 focus:border-blue focus:outline-none"
+              />
+
+              <label className="text-[0.7rem] text-slate-400 block mb-1">Duration</label>
               <select
                 value={duration}
                 onChange={(e) => setDuration(e.target.value)}
-                className="w-full p-2 bg-navy border border-slate-600 rounded-lg text-white text-sm mb-2 focus:border-blue focus:outline-none"
+                className="w-full p-2 bg-navy border border-slate-600 rounded-lg text-white text-xs mb-4 focus:border-blue focus:outline-none"
               >
                 <option value="1">1 Hour</option>
                 <option value="2">2 Hours</option>

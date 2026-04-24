@@ -6,13 +6,22 @@ const router = express.Router();
 
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const result = await client.execute(`
-      SELECT ps.id, ps.slot_number, ps.status, ps.level,
-             b.expires_at
-      FROM parking_slots ps
-      LEFT JOIN bookings b ON ps.id = b.slot_id AND b.status = 'active'
-      ORDER BY ps.id
-    `);
+    const now = new Date().toISOString();
+    const result = await client.execute({
+      sql: `
+        SELECT ps.id, ps.slot_number, ps.level,
+               b.start_time, b.expires_at,
+               CASE
+                 WHEN b.id IS NOT NULL AND b.start_time <= ? AND b.expires_at > ? THEN 'booked'
+                 ELSE 'available'
+               END as status
+        FROM parking_slots ps
+        LEFT JOIN bookings b ON ps.id = b.slot_id AND b.status = 'active'
+             AND b.start_time <= ? AND b.expires_at > ?
+        ORDER BY ps.id
+      `,
+      args: [now, now, now, now]
+    });
     return res.status(200).json(result.rows);
   } catch (err) {
     console.error('Get slots error:', err);
@@ -24,7 +33,7 @@ router.get('/my-bookings', authenticateToken, async (req, res) => {
   try {
     const result = await client.execute({
       sql: `
-        SELECT b.id, b.booked_at, b.status, b.duration_hours, b.expires_at,
+        SELECT b.id, b.booked_at, b.start_time, b.status, b.duration_hours, b.expires_at,
                ps.slot_number, ps.level
         FROM bookings b
         JOIN parking_slots ps ON b.slot_id = ps.id
@@ -46,24 +55,7 @@ router.post('/book', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Only regular users can book slots.' });
     }
 
-    // Check if user already has an active booking
-    const existingBooking = await client.execute({
-      sql: `SELECT b.id, ps.slot_number, b.expires_at 
-            FROM bookings b 
-            JOIN parking_slots ps ON b.slot_id = ps.id
-            WHERE b.user_id = ? AND b.status = 'active'`,
-      args: [req.user.id]
-    });
-
-    if (existingBooking.rows.length > 0) {
-      const booking = existingBooking.rows[0];
-      const expiresAt = new Date(booking.expires_at).toLocaleString();
-      return res.status(400).json({
-        error: `You already have an active booking for slot ${booking.slot_number}. It expires at ${expiresAt}.`
-      });
-    }
-
-    const { slot_id, duration_hours } = req.body;
+    const { slot_id, duration_hours, start_time } = req.body;
 
     if (!slot_id) {
       return res.status(400).json({ error: 'Slot ID is required.' });
@@ -72,6 +64,36 @@ router.post('/book', authenticateToken, async (req, res) => {
     const duration = parseInt(duration_hours);
     if (!duration || duration < 1 || duration > 24) {
       return res.status(400).json({ error: 'Duration must be between 1 and 24 hours.' });
+    }
+
+    const startTimeDate = start_time ? new Date(start_time) : new Date();
+    if (isNaN(startTimeDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid start time.' });
+    }
+
+    if (startTimeDate < new Date(Date.now() - 5000)) { // 5s grace period
+      return res.status(400).json({ error: 'Start time cannot be in the past.' });
+    }
+
+    const expires_at_date = new Date(startTimeDate.getTime() + duration * 60 * 60 * 1000);
+    const expires_at = expires_at_date.toISOString();
+    const startTimeIso = startTimeDate.toISOString();
+
+    // Check if user already has an overlapping booking
+    const userOverlap = await client.execute({
+      sql: `SELECT b.id, ps.slot_number, b.start_time, b.expires_at
+            FROM bookings b
+            JOIN parking_slots ps ON b.slot_id = ps.id
+            WHERE b.user_id = ? AND b.status = 'active'
+            AND ((b.start_time < ? AND b.expires_at > ?) OR (b.start_time >= ? AND b.start_time < ?))`,
+      args: [req.user.id, expires_at, startTimeIso, startTimeIso, expires_at]
+    });
+
+    if (userOverlap.rows.length > 0) {
+      const b = userOverlap.rows[0];
+      return res.status(400).json({
+        error: `You already have an overlapping booking for slot ${b.slot_number} from ${new Date(b.start_time).toLocaleString()} to ${new Date(b.expires_at).toLocaleString()}.`
+      });
     }
 
     // Fetch the slot by slot_id
@@ -85,30 +107,42 @@ router.post('/book', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Slot not found.' });
     }
 
-    if (slot.status !== 'available') {
-      return res.status(400).json({ error: 'This slot is already booked.' });
-    }
-
     const isDisabled = req.user.is_disabled === 1 || req.user.is_disabled === true;
     if (isDisabled && Number(slot.level) !== 1) {
       return res.status(403).json({ error: 'Disabled users can only book Level 1 slots.' });
     }
 
-    const expires_at = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
+    // Check if slot has an overlapping booking
+    const slotOverlap = await client.execute({
+      sql: `SELECT id FROM bookings
+            WHERE slot_id = ? AND status = 'active'
+            AND ((start_time < ? AND expires_at > ?) OR (start_time >= ? AND start_time < ?))`,
+      args: [slot.id, expires_at, startTimeIso, startTimeIso, expires_at]
+    });
+
+    if (slotOverlap.rows.length > 0) {
+      return res.status(400).json({ error: 'This slot is already booked for the selected time period.' });
+    }
 
     await client.execute({
-      sql: `INSERT INTO bookings (user_id, slot_id, duration_hours, expires_at, status) VALUES (?, ?, ?, ?, ?)`,
-      args: [req.user.id, slot.id, duration, expires_at, 'active']
+      sql: `INSERT INTO bookings (user_id, slot_id, start_time, duration_hours, expires_at, status) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [req.user.id, slot.id, startTimeIso, duration, expires_at, 'active']
     });
-    await client.execute({
-      sql: `UPDATE parking_slots SET status = 'booked' WHERE id = ?`,
-      args: [slot.id]
-    });
+
+    // Update slot status only if booking starts now
+    const now = new Date();
+    if (startTimeDate <= now && expires_at_date > now) {
+      await client.execute({
+        sql: `UPDATE parking_slots SET status = 'booked' WHERE id = ?`,
+        args: [slot.id]
+      });
+    }
 
     return res.status(201).json({
       message: `Slot ${slot.slot_number} booked successfully.`,
       slot_number: slot.slot_number,
       level: slot.level,
+      start_time: startTimeIso,
       expires_at: expires_at
     });
   } catch (err) {
