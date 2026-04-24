@@ -1,0 +1,6 @@
+node_modules/
+parking.db
+*.db
+.env
+.DS_Store
+frontend/dist/
