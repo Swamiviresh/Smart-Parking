@@ -51,14 +51,19 @@ setInterval(async () => {
       sql: `SELECT b.id, b.slot_id FROM bookings b WHERE b.status = 'active' AND b.expires_at <= ?`,
       args: [now]
     });
+
     for (const booking of expired.rows) {
-      await client.execute({ sql: `UPDATE bookings SET status = 'expired' WHERE id = ?`, args: [booking.id] });
+      await client.execute({
+        sql: `UPDATE bookings SET status = 'expired' WHERE id = ?`,
+        args: [booking.id]
+      });
     }
 
-    // 2. Update parking_slots status based on current active bookings
-<<<<<<< HEAD
-    // Reset all to available first, then set booked for currently active ones
+    // 2. Update parking_slots status based on active bookings
+    // Reset all to available first
     await client.execute(`UPDATE parking_slots SET status = 'available'`);
+
+    // Mark currently booked slots
     await client.execute({
       sql: `UPDATE parking_slots SET status = 'booked' 
             WHERE id IN (
@@ -67,25 +72,11 @@ setInterval(async () => {
             )`,
       args: [now, now]
     });
-=======
-    const allSlots = await client.execute(`SELECT id FROM parking_slots`);
-    for (const slot of allSlots.rows) {
-      const activeBooking = await client.execute({
-        sql: `SELECT id FROM bookings WHERE slot_id = ? AND status = 'active' AND start_time <= ? AND expires_at > ?`,
-        args: [slot.id, now, now]
-      });
-
-      const newStatus = activeBooking.rows.length > 0 ? 'booked' : 'available';
-      await client.execute({
-        sql: `UPDATE parking_slots SET status = ? WHERE id = ?`,
-        args: [newStatus, slot.id]
-      });
-    }
->>>>>>> f0f44b9 (Updated parking slots to 2)
 
     if (expired.rows.length > 0) {
       console.log(`Auto-expired ${expired.rows.length} bookings`);
     }
+
   } catch (err) {
     console.error('Booking management job error:', err);
   }
