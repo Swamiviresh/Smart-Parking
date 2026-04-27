@@ -38,7 +38,7 @@ A full-stack web application for managing parking slot bookings. Built with Node
 ## Features
 
 - **User Registration & Login** — JWT-based authentication with bcrypt password hashing
-- **Parking Slot Dashboard** — View all 20 slots with real-time availability (green = available, red = booked)
+- **Parking Slot Dashboard** — View all 2 slots with real-time availability (green = available, red = booked)
 - **Slot Booking** — Book available slots with one click
 - **Booking Cancellation** — Cancel your active bookings to free up slots
 - **Admin Panel** — View stats, all bookings, and slot overview (admin-only access)
@@ -74,6 +74,6 @@ A full-stack web application for managing parking slot bookings. Built with Node
 ## Notes
 
 - The SQLite database file (`parking.db`) is auto-created on first run
-- 20 parking slots (P1–P20) are auto-seeded on first run
+- 2 parking slots (P1–P2) are auto-seeded on first run
 - The default admin account is created automatically on first run
 - JWT tokens expire after 2 hours

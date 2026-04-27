@@ -56,6 +56,7 @@ setInterval(async () => {
     }
 
     // 2. Update parking_slots status based on current active bookings
+<<<<<<< HEAD
     // Reset all to available first, then set booked for currently active ones
     await client.execute(`UPDATE parking_slots SET status = 'available'`);
     await client.execute({
@@ -66,6 +67,21 @@ setInterval(async () => {
             )`,
       args: [now, now]
     });
+=======
+    const allSlots = await client.execute(`SELECT id FROM parking_slots`);
+    for (const slot of allSlots.rows) {
+      const activeBooking = await client.execute({
+        sql: `SELECT id FROM bookings WHERE slot_id = ? AND status = 'active' AND start_time <= ? AND expires_at > ?`,
+        args: [slot.id, now, now]
+      });
+
+      const newStatus = activeBooking.rows.length > 0 ? 'booked' : 'available';
+      await client.execute({
+        sql: `UPDATE parking_slots SET status = ? WHERE id = ?`,
+        args: [newStatus, slot.id]
+      });
+    }
+>>>>>>> f0f44b9 (Updated parking slots to 2)
 
     if (expired.rows.length > 0) {
       console.log(`Auto-expired ${expired.rows.length} bookings`);
