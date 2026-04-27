@@ -471,7 +471,7 @@ export default function Dashboard() {
       }
 
       try {
-        const res = await api.get("/api/slots");
+        const res = await api.get("/slots");
 
         console.log("Dashboard API full response:", res);
         console.log("Dashboard API data:", res.data);
