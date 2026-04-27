@@ -1,63 +1,68 @@
 import { useEffect, useState } from "react";
 import api from "../utils/api";
-import Navbar from "../components/Navbar";
 
 export default function Dashboard() {
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    const fetchSlots = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        console.log("Fetching slots from /slots...");
+
+        const res = await api.get("/slots");
+
+        console.log("Full axios response:", res);
+        console.log("Response data:", res.data);
+        console.log("Is response data an array?", Array.isArray(res.data));
+
+        if (Array.isArray(res.data)) {
+          setSlots(res.data);
+          console.log("Slots state will be set to:", res.data);
+        } else {
+          console.error("Unexpected API response format:", res.data);
+          setSlots([]);
+          setError("Unexpected response format from server.");
+        }
+      } catch (err) {
+        console.error("Error fetching slots:", err);
+        setError("Failed to load parking slots.");
+        setSlots([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchSlots();
   }, []);
 
-  const fetchSlots = async () => {
-    try {
-      const res = await api.get("/api/slots");
+  console.log("Current slots state:", slots);
 
-      console.log("API response:", res.data); // debug
+  if (loading) {
+    return <div>Loading parking slots...</div>;
+  }
 
-      // ✅ Correct handling
-      setSlots(res.data);
+  if (error) {
+    return <div>{error}</div>;
+  }
 
-    } catch (err) {
-      console.error("Error fetching slots:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (slots.length === 0) {
+    return <div>No parking slots found.</div>;
+  }
 
   return (
     <div>
-      <Navbar />
+      <h1>Smart Parking Dashboard</h1>
 
-      <div style={{ padding: "20px" }}>
-        <h1>Parking Dashboard</h1>
-
-        {loading ? (
-          <p>Loading...</p>
-        ) : slots.length === 0 ? (
-          <p>No slots available</p>
-        ) : (
-          <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
-            {slots.map((slot) => (
-              <div
-                key={slot.id}
-                style={{
-                  padding: "20px",
-                  borderRadius: "10px",
-                  background:
-                    slot.status === "available" ? "#d4edda" : "#f8d7da",
-                  border: "1px solid #ccc",
-                  minWidth: "150px",
-                }}
-              >
-                <h3>{slot.slot_number}</h3>
-                <p>Status: {slot.status}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {slots.map((slot) => (
+        <div key={slot.id}>
+          {slot.slot_number} - {slot.status}
+        </div>
+      ))}
     </div>
   );
 }
