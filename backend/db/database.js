@@ -51,13 +51,17 @@ async function initDB() {
   // Seed slots if empty
   const slots = await client.execute(`SELECT COUNT(*) as count FROM parking_slots`);
   if (slots.rows[0].count === 0) {
-    for (let i = 1; i <= 20; i++) {
-      const level = i <= 10 ? 1 : 2;
+    for (let i = 1; i <= 2; i++) {
+      const level = i;
       await client.execute({
         sql: `INSERT INTO parking_slots (slot_number, level) VALUES (?, ?)`,
         args: [`P${i}`, level]
       });
     }
+  } else if (slots.rows[0].count > 2) {
+    // Clean up to keep only 2 slots
+    await client.execute(`DELETE FROM parking_slots WHERE id > 2`);
+    await client.execute(`DELETE FROM bookings WHERE slot_id > 2`);
   }
 
   // Seed admin if not exists
