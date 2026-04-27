@@ -66,12 +66,3 @@ setInterval(async () => {
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
 });
-
-router.get('/init', async (req, res) => {
-  await client.execute(`DELETE FROM parking_slots`);
-  await client.execute(`
-    INSERT INTO parking_slots (id, status) 
-    VALUES (1, 'available'), (2, 'available')
-  `);
-  res.send("Initialized");
-});
