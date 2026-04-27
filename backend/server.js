@@ -9,6 +9,8 @@ const { initDB } = require("./db/database");
 const rfidRoutes = require("./routes/rfid");
 const slotRoutes = require("./routes/slots");
 const bookingRoutes = require("./routes/bookings");
+const authRoutes = require("./routes/auth");
+const adminRoutes = require("./routes/admin");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +28,8 @@ app.get("/api/health", (req, res) => {
 app.use("/api/rfid", rfidRoutes);
 app.use("/api/slots", slotRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Serve frontend (Vite build)
 app.use(express.static(path.join(__dirname, "..", "frontend", "dist")));
