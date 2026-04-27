@@ -1,20 +1,20 @@
 import { useEffect, useState } from "react";
 import api from "../utils/api";
 
-const POLL_INTERVAL = 4000;
+const POLL_INTERVAL = 3000;
 
 const styles = `
   * {
     box-sizing: border-box;
   }
 
-  .dashboard-shell {
+  .dashboard-page {
     min-height: 100vh;
     padding: 24px;
     background:
-      radial-gradient(circle at top right, rgba(77, 127, 255, 0.18), transparent 24%),
+      radial-gradient(circle at top right, rgba(79, 134, 255, 0.18), transparent 22%),
       radial-gradient(circle at bottom left, rgba(46, 214, 115, 0.08), transparent 28%),
-      linear-gradient(180deg, #0b1329 0%, #0a1020 100%);
+      linear-gradient(180deg, #09101f 0%, #0b1426 100%);
     color: #eef4ff;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
@@ -22,21 +22,22 @@ const styles = `
   .dashboard-frame {
     max-width: 1280px;
     margin: 0 auto;
-    background: rgba(15, 24, 48, 0.92);
-    border: 1px solid rgba(132, 151, 198, 0.18);
     border-radius: 28px;
     overflow: hidden;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+    background: rgba(15, 24, 48, 0.95);
+    border: 1px solid rgba(132, 151, 198, 0.18);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
   }
 
   .dashboard-header {
+    padding: 28px 32px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 20px;
-    padding: 28px 32px;
+    gap: 18px;
     background: rgba(35, 47, 76, 0.95);
     border-bottom: 1px solid rgba(132, 151, 198, 0.14);
+    flex-wrap: wrap;
   }
 
   .brand {
@@ -52,17 +53,17 @@ const styles = `
     place-items: center;
     border-radius: 18px;
     background: linear-gradient(135deg, #5f9bff 0%, #3d78e5 100%);
-    color: #ffffff;
+    color: #fff;
     font-size: 30px;
     font-weight: 800;
-    box-shadow: 0 12px 30px rgba(61, 120, 229, 0.28);
+    box-shadow: 0 12px 28px rgba(61, 120, 229, 0.28);
   }
 
   .brand h1 {
     margin: 0;
     font-size: 2rem;
-    line-height: 1.1;
-    letter-spacing: -0.03em;
+    line-height: 1.05;
+    letter-spacing: -0.04em;
   }
 
   .brand p {
@@ -71,38 +72,36 @@ const styles = `
     font-size: 0.96rem;
   }
 
-  .header-meta {
+  .header-right {
     display: flex;
     align-items: center;
     gap: 14px;
     flex-wrap: wrap;
-    justify-content: flex-end;
   }
 
-  .system-pill {
+  .pill {
     display: inline-flex;
     align-items: center;
     gap: 10px;
     padding: 10px 14px;
     border-radius: 999px;
     background: rgba(18, 29, 56, 0.92);
-    border: 1px solid rgba(132, 151, 198, 0.18);
-    color: #d9e5ff;
+    border: 1px solid rgba(132, 151, 198, 0.16);
     font-weight: 600;
+    color: #dce7ff;
   }
 
-  .system-dot {
+  .dot {
     width: 10px;
     height: 10px;
     border-radius: 999px;
-    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.04);
   }
 
-  .system-dot.online {
+  .dot.online {
     background: #2ed673;
   }
 
-  .system-dot.offline {
+  .dot.offline {
     background: #ff5b5b;
   }
 
@@ -115,21 +114,28 @@ const styles = `
     padding: 32px;
   }
 
-  .hero {
+  .top-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.9fr);
-    gap: 24px;
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
+    gap: 22px;
     margin-bottom: 28px;
   }
 
-  .hero-copy {
-    padding: 28px;
-    border-radius: 24px;
+  .hero-card,
+  .stat-card,
+  .feedback-card,
+  .level-block,
+  .slot-card {
     background: linear-gradient(180deg, rgba(26, 39, 71, 0.96) 0%, rgba(18, 29, 56, 0.96) 100%);
     border: 1px solid rgba(132, 151, 198, 0.14);
+    border-radius: 24px;
   }
 
-  .hero-copy span {
+  .hero-card {
+    padding: 28px;
+  }
+
+  .hero-card span {
     display: inline-block;
     margin-bottom: 10px;
     color: #7ea8ff;
@@ -139,16 +145,15 @@ const styles = `
     text-transform: uppercase;
   }
 
-  .hero-copy h2 {
+  .hero-card h2 {
     margin: 0 0 12px;
     font-size: 2.2rem;
     line-height: 1.05;
     letter-spacing: -0.04em;
   }
 
-  .hero-copy p {
+  .hero-card p {
     margin: 0;
-    max-width: 58ch;
     color: #aebcdd;
     line-height: 1.7;
   }
@@ -161,113 +166,104 @@ const styles = `
 
   .stat-card {
     padding: 20px;
-    border-radius: 20px;
-    background: linear-gradient(180deg, rgba(26, 39, 71, 0.94) 0%, rgba(18, 29, 56, 0.94) 100%);
-    border: 1px solid rgba(132, 151, 198, 0.14);
   }
 
-  .stat-card-label {
+  .stat-card span {
     display: block;
     margin-bottom: 12px;
     color: #9caed2;
     font-size: 0.88rem;
   }
 
-  .stat-card-value {
-    margin: 0;
+  .stat-card strong {
+    display: block;
     font-size: 2rem;
     font-weight: 800;
     letter-spacing: -0.03em;
   }
 
-  .stat-card-value.available {
+  .stat-available {
     color: #39d675;
   }
 
-  .stat-card-value.booked {
-    color: #ff6b6b;
+  .stat-booked {
+    color: #ffd24d;
   }
 
-  .stat-card-value.online {
-    color: #8cc1ff;
-    font-size: 1.2rem;
-    letter-spacing: 0;
+  .stat-occupied {
+    color: #ff6b6b;
   }
 
   .feedback-card {
     padding: 22px;
-    border-radius: 20px;
-    background: rgba(18, 29, 56, 0.95);
-    border: 1px solid rgba(132, 151, 198, 0.14);
-    color: #dce7ff;
     text-align: center;
+    color: #dce7ff;
   }
 
   .feedback-card.error {
+    background: rgba(64, 21, 30, 0.45);
     border-color: rgba(255, 91, 91, 0.34);
     color: #ffd2d2;
-    background: rgba(64, 21, 30, 0.45);
   }
 
   .warning-banner {
     margin-bottom: 22px;
     padding: 14px 16px;
     border-radius: 16px;
-    border: 1px solid rgba(255, 91, 91, 0.32);
-    background: rgba(92, 26, 41, 0.28);
-    color: #ffd6d6;
-    font-size: 0.96rem;
+    border: 1px solid rgba(255, 145, 0, 0.28);
+    background: rgba(107, 77, 6, 0.28);
+    color: #ffe7ab;
+    font-size: 0.95rem;
   }
 
-  .level-section + .level-section {
-    margin-top: 34px;
+  .level-block {
+    padding: 24px;
+    margin-top: 22px;
   }
 
-  .section-header {
+  .level-header {
     display: flex;
     align-items: end;
     justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
     margin-bottom: 18px;
     flex-wrap: wrap;
   }
 
-  .section-title-wrap h3 {
+  .level-title h3 {
     margin: 0;
-    font-size: 2rem;
+    font-size: 1.9rem;
     line-height: 1.08;
     letter-spacing: -0.04em;
   }
 
-  .section-title-wrap .section-line {
-    width: 180px;
+  .level-line {
+    width: 170px;
     height: 4px;
     margin-top: 12px;
     border-radius: 999px;
     background: linear-gradient(90deg, #4f86ff 0%, #7aa0ff 100%);
   }
 
-  .section-meta {
-    color: #9fb0d3;
-    font-size: 0.95rem;
+  .level-meta {
+    color: #a6b6d9;
+    font-size: 0.94rem;
   }
 
   .slots-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 20px;
+    gap: 18px;
   }
 
   .slot-card {
     padding: 22px;
-    border-radius: 24px;
-    background: linear-gradient(180deg, rgba(33, 45, 72, 0.97) 0%, rgba(25, 35, 60, 0.97) 100%);
+    min-height: 220px;
     border: 2px solid transparent;
-    min-height: 260px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    transition: transform 160ms ease, box-shadow 160ms ease;
   }
 
   .slot-card:hover {
@@ -276,12 +272,17 @@ const styles = `
 
   .slot-card.available {
     border-color: rgba(46, 214, 115, 0.9);
-    box-shadow: 0 18px 40px rgba(25, 85, 51, 0.22);
+    box-shadow: 0 16px 40px rgba(25, 85, 51, 0.22);
   }
 
   .slot-card.booked {
+    border-color: rgba(255, 210, 77, 0.95);
+    box-shadow: 0 16px 40px rgba(118, 92, 22, 0.2);
+  }
+
+  .slot-card.occupied {
     border-color: rgba(255, 91, 91, 0.9);
-    box-shadow: 0 18px 40px rgba(101, 32, 32, 0.22);
+    box-shadow: 0 16px 40px rgba(101, 32, 32, 0.22);
   }
 
   .slot-top {
@@ -293,13 +294,13 @@ const styles = `
   }
 
   .slot-top h4 {
-    margin: 14px 0 0;
-    font-size: 2.25rem;
+    margin: 10px 0 0;
+    font-size: 2.15rem;
     line-height: 1;
     letter-spacing: -0.04em;
   }
 
-  .slot-badge {
+  .level-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -307,37 +308,34 @@ const styles = `
     padding: 9px 12px;
     border-radius: 999px;
     background: linear-gradient(135deg, #4d86ff 0%, #3d78e5 100%);
-    color: #ffffff;
+    color: #fff;
     font-size: 0.88rem;
     font-weight: 700;
   }
 
-  .slot-status {
-    margin: 0;
-    font-size: 1.05rem;
+  .status-text {
+    margin: 0 0 14px;
+    font-size: 1.02rem;
     font-weight: 800;
     letter-spacing: 0.12em;
   }
 
-  .slot-status.available {
+  .status-text.available {
     color: #39d675;
   }
 
-  .slot-status.booked {
-    color: #ff6b6b;
+  .status-text.booked {
+    color: #ffd24d;
   }
 
-  .slot-divider {
-    height: 1px;
-    margin: 18px 0;
-    background: rgba(132, 151, 198, 0.18);
+  .status-text.occupied {
+    color: #ff6b6b;
   }
 
   .slot-meta-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
-    margin-bottom: 18px;
   }
 
   .slot-meta-item {
@@ -363,6 +361,7 @@ const styles = `
   }
 
   .slot-footer {
+    margin-top: 18px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -380,63 +379,51 @@ const styles = `
   }
 
   .slot-footer.booked {
+    background: linear-gradient(135deg, #ffcf40 0%, #d7a400 100%);
+    color: #1b1f29;
+  }
+
+  .slot-footer.occupied {
     background: linear-gradient(135deg, #ff5b5b 0%, #e34848 100%);
   }
 
   @media (max-width: 980px) {
     .dashboard-header {
       padding: 24px;
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .header-meta {
-      width: 100%;
-      justify-content: flex-start;
     }
 
     .dashboard-main {
       padding: 24px;
     }
 
-    .hero {
+    .top-grid {
       grid-template-columns: 1fr;
-    }
-
-    .stats-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 
   @media (max-width: 640px) {
-    .dashboard-shell {
+    .dashboard-page {
       padding: 14px;
+    }
+
+    .hero-card,
+    .stat-card,
+    .level-block,
+    .slot-card,
+    .feedback-card {
+      padding: 18px;
     }
 
     .brand h1 {
       font-size: 1.7rem;
     }
 
-    .hero-copy,
-    .stat-card,
-    .slot-card,
-    .feedback-card {
-      padding: 18px;
-    }
-
-    .hero-copy h2 {
+    .hero-card h2 {
       font-size: 1.8rem;
     }
 
-    .section-title-wrap h3 {
-      font-size: 1.6rem;
-    }
-
     .stats-grid,
-    .slot-meta-grid {
-      grid-template-columns: 1fr;
-    }
-
+    .slot-meta-grid,
     .slots-grid {
       grid-template-columns: 1fr;
     }
@@ -447,20 +434,26 @@ const styles = `
   }
 `;
 
-const normalizeStatus = (status) => String(status || "").trim().toLowerCase();
+function normalizeStatus(status) {
+  const normalized = String(status || "").trim().toLowerCase();
 
-const formatStatus = (status) => {
+  if (normalized === "occupied") return "occupied";
+  if (normalized === "booked") return "booked";
+  return "available";
+}
+
+function formatStatus(status) {
   const normalized = normalizeStatus(status);
-  if (!normalized) return "Unknown";
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-};
+}
 
-const getLevelLabel = (level) => {
+function getLevelLabel(level) {
   const numericLevel = Number(level);
+
   if (numericLevel === 1) return "Ground Floor";
   if (numericLevel === 2) return "Upper Floor";
   return "Parking Area";
-};
+}
 
 export default function Dashboard() {
   const [slots, setSlots] = useState([]);
@@ -480,7 +473,7 @@ export default function Dashboard() {
       try {
         const res = await api.get("/api/slots");
 
-        console.log("Dashboard API response:", res);
+        console.log("Dashboard API full response:", res);
         console.log("Dashboard API data:", res.data);
 
         if (!Array.isArray(res.data)) {
@@ -489,6 +482,7 @@ export default function Dashboard() {
 
         const normalizedSlots = res.data.map((slot) => ({
           ...slot,
+          level: slot.level ?? 1,
           status: normalizeStatus(slot.status),
         }));
 
@@ -538,7 +532,10 @@ export default function Dashboard() {
 
   const sortedSlots = [...slots].sort((a, b) => {
     const levelDiff = Number(a.level ?? 0) - Number(b.level ?? 0);
-    if (levelDiff !== 0) return levelDiff;
+
+    if (levelDiff !== 0) {
+      return levelDiff;
+    }
 
     return String(a.slot_number ?? "").localeCompare(
       String(b.slot_number ?? ""),
@@ -547,28 +544,31 @@ export default function Dashboard() {
     );
   });
 
-  const groupedByLevel = sortedSlots.reduce((acc, slot) => {
-    const key = slot.level ?? "Unknown";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(slot);
+  const groupedSlots = sortedSlots.reduce((acc, slot) => {
+    const levelKey = String(slot.level ?? 1);
+
+    if (!acc[levelKey]) {
+      acc[levelKey] = [];
+    }
+
+    acc[levelKey].push(slot);
     return acc;
   }, {});
 
-  const levelEntries = Object.entries(groupedByLevel).sort(
-    ([levelA], [levelB]) => Number(levelA) - Number(levelB)
+  const levelEntries = Object.entries(groupedSlots).sort(
+    ([a], [b]) => Number(a) - Number(b)
   );
 
   const totalSlots = sortedSlots.length;
-  const availableSlots = sortedSlots.filter(
-    (slot) => normalizeStatus(slot.status) === "available"
-  ).length;
-  const bookedSlots = totalSlots - availableSlots;
+  const availableCount = sortedSlots.filter((slot) => slot.status === "available").length;
+  const bookedCount = sortedSlots.filter((slot) => slot.status === "booked").length;
+  const occupiedCount = sortedSlots.filter((slot) => slot.status === "occupied").length;
 
   return (
     <>
       <style>{styles}</style>
 
-      <div className="dashboard-shell">
+      <div className="dashboard-page">
         <div className="dashboard-frame">
           <header className="dashboard-header">
             <div className="brand">
@@ -576,67 +576,60 @@ export default function Dashboard() {
 
               <div>
                 <h1>Smart Parking</h1>
-                <p>ESP-synced parking slot monitor</p>
+                <p>Live RFID + IR parking monitor</p>
               </div>
             </div>
 
-            <div className="header-meta">
-              <div className="system-pill">
-                <span
-                  className={`system-dot ${isOnline ? "online" : "offline"}`}
-                />
+            <div className="header-right">
+              <div className="pill">
+                <span className={`dot ${isOnline ? "online" : "offline"}`} />
                 {isOnline ? "System Online" : "System Offline"}
               </div>
 
               <div className="updated-text">
-                {lastUpdated
-                  ? `Last updated at ${lastUpdated}`
-                  : "Waiting for first sync..."}
+                {lastUpdated ? `Last updated at ${lastUpdated}` : "Waiting for live data..."}
               </div>
             </div>
           </header>
 
           <main className="dashboard-main">
-            <section className="hero">
-              <div className="hero-copy">
-                <span>Live Dashboard</span>
-                <h2>Track every parking slot in real time.</h2>
+            <section className="top-grid">
+              <div className="hero-card">
+                <span>Smart Parking Dashboard</span>
+                <h2>Track booked, occupied, and available slots in real time.</h2>
                 <p>
-                  Slot status is fetched from <strong>/api/slots</strong> and
-                  refreshed automatically every 4 seconds, so changes pushed by
-                  your ESP device show up without reloading the page.
+                  This dashboard reads directly from <strong>/api/slots</strong>,
+                  uses <strong>res.data</strong> as the array response, and refreshes
+                  every 3 seconds so ESP-triggered IR updates appear automatically.
                 </p>
               </div>
 
               <div className="stats-grid">
-                <article className="stat-card">
-                  <span className="stat-card-label">Total Slots</span>
-                  <p className="stat-card-value">{totalSlots}</p>
-                </article>
+                <div className="stat-card">
+                  <span>Total Slots</span>
+                  <strong>{totalSlots}</strong>
+                </div>
 
-                <article className="stat-card">
-                  <span className="stat-card-label">Available</span>
-                  <p className="stat-card-value available">{availableSlots}</p>
-                </article>
+                <div className="stat-card">
+                  <span>Available</span>
+                  <strong className="stat-available">{availableCount}</strong>
+                </div>
 
-                <article className="stat-card">
-                  <span className="stat-card-label">Booked</span>
-                  <p className="stat-card-value booked">{bookedSlots}</p>
-                </article>
+                <div className="stat-card">
+                  <span>Booked</span>
+                  <strong className="stat-booked">{bookedCount}</strong>
+                </div>
 
-                <article className="stat-card">
-                  <span className="stat-card-label">Live Status</span>
-                  <p className="stat-card-value online">
-                    {isOnline ? "Polling Active" : "Reconnect Needed"}
-                  </p>
-                </article>
+                <div className="stat-card">
+                  <span>Occupied</span>
+                  <strong className="stat-occupied">{occupiedCount}</strong>
+                </div>
               </div>
             </section>
 
             {error && sortedSlots.length > 0 ? (
               <div className="warning-banner">
-                Live refresh hit an error, but the last known slot data is still
-                shown. Error: {error}
+                Live refresh failed, but the last known slot state is still displayed. Error: {error}
               </div>
             ) : null}
 
@@ -645,81 +638,59 @@ export default function Dashboard() {
             ) : error && sortedSlots.length === 0 ? (
               <div className="feedback-card error">{error}</div>
             ) : sortedSlots.length === 0 ? (
-              <div className="feedback-card">
-                No parking slots found right now.
-              </div>
+              <div className="feedback-card">No parking slots found.</div>
             ) : (
               levelEntries.map(([level, levelSlots]) => (
-                <section className="level-section" key={level}>
-                  <div className="section-header">
-                    <div className="section-title-wrap">
+                <section className="level-block" key={level}>
+                  <div className="level-header">
+                    <div className="level-title">
                       <h3>
-                        Level {level} {"\u2014"} {getLevelLabel(level)}
+                        Level {level} - {getLevelLabel(level)}
                       </h3>
-                      <div className="section-line" />
+                      <div className="level-line" />
                     </div>
 
-                    <div className="section-meta">
-                      {levelSlots.length} slot
-                      {levelSlots.length === 1 ? "" : "s"} on this level
+                    <div className="level-meta">
+                      {levelSlots.length} slot{levelSlots.length === 1 ? "" : "s"}
                     </div>
                   </div>
 
                   <div className="slots-grid">
-                    {levelSlots.map((slot) => {
-                      const isAvailable =
-                        normalizeStatus(slot.status) === "available";
-
-                      return (
-                        <article
-                          key={slot.id}
-                          className={`slot-card ${
-                            isAvailable ? "available" : "booked"
-                          }`}
-                        >
-                          <div>
-                            <div className="slot-top">
-                              <div>
-                                <span className="slot-badge">
-                                  L{slot.level ?? "-"}
-                                </span>
-                                <h4>{slot.slot_number}</h4>
-                              </div>
-                            </div>
-
-                            <p
-                              className={`slot-status ${
-                                isAvailable ? "available" : "booked"
-                              }`}
-                            >
-                              {formatStatus(slot.status).toUpperCase()}
-                            </p>
-
-                            <div className="slot-divider" />
-
-                            <div className="slot-meta-grid">
-                              <div className="slot-meta-item">
-                                <span>Slot ID</span>
-                                <strong>#{slot.id}</strong>
-                              </div>
-
-                              <div className="slot-meta-item">
-                                <span>Level</span>
-                                <strong>{slot.level}</strong>
-                              </div>
+                    {levelSlots.map((slot) => (
+                      <article
+                        key={slot.id}
+                        className={`slot-card ${slot.status}`}
+                      >
+                        <div>
+                          <div className="slot-top">
+                            <div>
+                              <div className="level-badge">L{slot.level}</div>
+                              <h4>{slot.slot_number}</h4>
                             </div>
                           </div>
 
-                          <div
-                            className={`slot-footer ${
-                              isAvailable ? "available" : "booked"
-                            }`}
-                          >
-                            {slot.slot_number} - {formatStatus(slot.status)}
+                          <p className={`status-text ${slot.status}`}>
+                            {formatStatus(slot.status).toUpperCase()}
+                          </p>
+
+                          <div className="slot-meta-grid">
+                            <div className="slot-meta-item">
+                              <span>Slot ID</span>
+                              <strong>#{slot.id}</strong>
+                            </div>
+
+                            <div className="slot-meta-item">
+                              <span>Level</span>
+                              <strong>{slot.level}</strong>
+                            </div>
                           </div>
-                        </article>
-                      );
-                    })}
+                        </div>
+
+                        <div className={`slot-footer ${slot.status}`}>
+                          {slot.slot_number} - {formatStatus(slot.status)}
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 </section>
               ))

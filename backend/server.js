@@ -1,11 +1,13 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const { initDB: initializeDatabase, client } = require('./db/database');
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
 
-const authRoutes = require('./routes/auth');
-const slotRoutes = require('./routes/slots');
-const adminRoutes = require('./routes/admin');
+const { initDB } = require("./db/database");
+
+// Routes
+const rfidRoutes = require("./routes/rfid");
+const slotRoutes = require("./routes/slots");
+const bookingRoutes = require("./routes/bookings");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,55 +16,40 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Serve frontend
-app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
-
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/slots', slotRoutes);
-app.use('/api/admin', adminRoutes);
-
-// React fallback
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
+// Health check (optional but useful)
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
 });
 
-// 404 API
-app.use('/api/*', (req, res) => {
-  res.status(404).json({ error: 'API route not found.' });
+// API Routes
+app.use("/api/rfid", rfidRoutes);
+app.use("/api/slots", slotRoutes);
+app.use("/api/bookings", bookingRoutes);
+
+// Serve frontend (Vite build)
+app.use(express.static(path.join(__dirname, "..", "frontend", "dist")));
+
+// React fallback (must be AFTER everything)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "..", "frontend", "dist", "index.html"));
 });
 
-// Error handler
+// Global error handler
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: 'Internal server error.' });
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
 });
 
-// Init DB
-initializeDatabase();
+// Initialize DB
+initDB()
+  .then(() => {
+    console.log("✅ Database initialized");
+  })
+  .catch((err) => {
+    console.error("❌ DB init failed:", err);
+  });
 
-// Booking expiry job
-setInterval(async () => {
-  try {
-    const now = new Date().toISOString();
-
-    const expired = await client.execute({
-      sql: `SELECT id FROM bookings WHERE status='active' AND expires_at <= ?`,
-      args: [now]
-    });
-
-    for (const b of expired.rows) {
-      await client.execute({
-        sql: `UPDATE bookings SET status='expired' WHERE id=?`,
-        args: [b.id]
-      });
-    }
-
-  } catch (err) {
-    console.error(err);
-  }
-}, 60000);
-
+// Start server
 app.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+  console.log(`🚀 Smart Parking server running on port ${PORT}`);
 });
