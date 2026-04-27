@@ -1,5 +1,4 @@
-const db = require("../db");
-
+const { client: db } = require("../db/database");
 const schemaCache = new Map();
 
 async function execute(sql, args = []) {
