@@ -1,0 +1,9 @@
+Server starting...
+🚀 Smart Parking server running on port 3000
+Database initialized
+✅ Database initialized
+[slots] GET /api/slots
+[slots] Response: [
+  { id: 1, slot_number: 'P1', status: 'booked', level: 1 },
+  { id: 2, slot_number: 'P2', status: 'booked', level: 2 }
+]
