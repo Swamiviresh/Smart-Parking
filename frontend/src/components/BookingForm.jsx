@@ -10,10 +10,27 @@ export default function BookingForm({ onBookingCreated }) {
     duration: '1'
   });
   const [loading, setLoading] = useState(false);
+  const [fetchingSlots, setFetchingSlots] = useState(true);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    api.get('/slots').then(res => setSlots(res.data)).catch(console.error);
+    console.log("[BookingForm] Fetching slots...");
+    api.get('/slots')
+      .then(res => {
+        console.log("[BookingForm] Slots received:", res.data);
+        if (Array.isArray(res.data)) {
+          setSlots(res.data);
+        } else {
+          console.error("[BookingForm] Expected array for slots, got:", typeof res.data);
+          setSlots([]);
+        }
+      })
+      .catch(err => {
+        console.error("[BookingForm] Failed to fetch slots:", err);
+      })
+      .finally(() => {
+        setFetchingSlots(false);
+      });
   }, []);
 
   const handleSubmit = async (e) => {
@@ -32,8 +49,8 @@ export default function BookingForm({ onBookingCreated }) {
   };
 
   return (
-    <div className="bg-navy-light p-6 rounded-2xl border border-slate-700 shadow-xl">
-      <h3 className="text-xl font-bold text-white mb-4">Pre-book a Slot</h3>
+    <div className="bg-navy-light dark:bg-navy-light p-6 rounded-2xl border border-slate-700 shadow-xl transition-colors">
+      <h3 className="text-xl font-bold text-white dark:text-white mb-4">Pre-book a Slot</h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-slate-400 text-sm mb-1">Select Slot</label>
@@ -42,13 +59,20 @@ export default function BookingForm({ onBookingCreated }) {
             className="w-full bg-navy-medium border border-slate-600 rounded-lg px-4 py-2 text-white outline-none focus:border-blue"
             value={formData.slot_id}
             onChange={(e) => setFormData({ ...formData, slot_id: e.target.value })}
+            disabled={fetchingSlots}
           >
-            <option value="">Choose a slot...</option>
-            {slots.map(slot => (
-              <option key={slot.id} value={slot.id}>
-                {slot.slot_number} (Level {slot.level})
-              </option>
-            ))}
+            {fetchingSlots ? (
+              <option>Loading slots...</option>
+            ) : (
+              <>
+                <option value="">Choose a slot...</option>
+                {slots.map(slot => (
+                  <option key={slot.id} value={slot.id}>
+                    {slot.slot_number} (Level {slot.level})
+                  </option>
+                ))}
+              </>
+            )}
           </select>
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -87,7 +111,7 @@ export default function BookingForm({ onBookingCreated }) {
         </div>
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || fetchingSlots}
           className="w-full bg-blue hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
         >
           {loading ? 'Processing...' : 'Confirm Booking'}
