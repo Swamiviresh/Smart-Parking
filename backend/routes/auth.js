@@ -113,4 +113,48 @@ router.post('/change-password', authenticateToken, async (req, res) => {
   }
 });
 
+router.post('/update-rfid', authenticateToken, async (req, res) => {
+  try {
+    const { rfid } = req.body;
+
+    if (!rfid) {
+      return res.status(400).json({ error: 'RFID tag is required.' });
+    }
+
+    // Check if RFID is already linked to another user
+    const existing = await client.execute({
+      sql: `SELECT id FROM users WHERE rfid = ? AND id != ?`,
+      args: [rfid.trim(), req.user.id]
+    });
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'This RFID tag is already linked to another account.' });
+    }
+
+    await client.execute({
+      sql: `UPDATE users SET rfid = ? WHERE id = ?`,
+      args: [rfid.trim(), req.user.id]
+    });
+
+    return res.status(200).json({ message: 'RFID updated successfully' });
+  } catch (err) {
+    console.error('Update RFID error:', err);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const result = await client.execute({
+      sql: `SELECT id, name, email, role, rfid FROM users WHERE id = ?`,
+      args: [req.user.id]
+    });
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    return res.status(200).json(user);
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;
