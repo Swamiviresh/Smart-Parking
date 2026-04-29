@@ -2,7 +2,7 @@ const { createClient } = require("@libsql/client");
 
 // Create DB client
 const client = createClient({
-  url: process.env.TURSO_DATABASE_URL,
+  url: process.env.TURSO_DATABASE_URL || "file:parking.db",
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
@@ -14,6 +14,10 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
+        email TEXT UNIQUE,
+        password TEXT,
+        role TEXT DEFAULT 'user',
+        is_disabled INTEGER DEFAULT 0,
         rfid TEXT UNIQUE
       )
     `);
@@ -34,7 +38,9 @@ async function initDB() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         slot_id INTEGER,
-        status TEXT,
+        start_time TEXT,
+        end_time TEXT,
+        status TEXT DEFAULT 'active',
         expires_at TEXT
       )
     `);

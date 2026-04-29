@@ -1,6 +1,7 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Logo from './Logo';
+import ThemeToggle from './ThemeToggle';
 
 export default function Navbar({ isAdmin = false }) {
   const navigate = useNavigate();
@@ -13,10 +14,12 @@ export default function Navbar({ isAdmin = false }) {
   };
 
   return (
-    <nav className="flex items-center justify-between px-6 py-4 bg-navy-light border-b border-slate-600">
+    <nav className="flex items-center justify-between px-6 py-4 bg-navy-light border-b border-slate-600 shadow-md">
       <div className="flex items-center gap-3">
-        <Logo size={32} />
-        <span className="text-lg font-bold text-white">Smart Parking</span>
+        <Link to={isAdmin ? "/admin" : "/dashboard"} className="flex items-center gap-3">
+          <Logo size={32} />
+          <span className="text-lg font-bold text-white">Smart Parking</span>
+        </Link>
         {isAdmin && (
           <span className="bg-blue text-white text-[0.65rem] px-3 py-1 rounded-full uppercase tracking-wider font-semibold">
             Admin
@@ -24,7 +27,8 @@ export default function Navbar({ isAdmin = false }) {
         )}
       </div>
       <div className="flex items-center gap-4">
-        <span className="text-slate-300 text-sm">
+        <ThemeToggle />
+        <span className="text-slate-300 text-sm hidden md:inline">
           Welcome, {userName}
           {!isAdmin && (isDisabled === '1' || isDisabled === 'true') && (
             <span className="ml-2 text-xs bg-blue/20 text-blue px-2 py-0.5 rounded-full">
@@ -32,11 +36,19 @@ export default function Navbar({ isAdmin = false }) {
             </span>
           )}
         </span>
+        {!isAdmin && (
+          <Link
+            to="/profile"
+            className="text-sm text-slate-300 hover:text-white transition-colors"
+          >
+            Profile
+          </Link>
+        )}
         <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={handleLogout}
-          className="px-4 py-2 text-sm border border-slate-600 rounded-lg text-white hover:bg-navy-medium transition-colors"
+          className="px-4 py-2 text-sm bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 hover:bg-red-500/20 transition-colors"
         >
           Logout
         </motion.button>

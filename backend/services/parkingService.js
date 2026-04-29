@@ -23,331 +23,139 @@ function normalizeStatus(status) {
   return String(status || "").trim().toLowerCase();
 }
 
-function addHoursToNow(hours) {
-  const next = new Date();
-  next.setHours(next.getHours() + hours);
-  return next.toISOString();
-}
-
-async function getTableSchema(tableName) {
-  if (schemaCache.has(tableName)) {
-    return schemaCache.get(tableName);
-  }
-
-  const result = await db.execute(`PRAGMA table_info(${tableName})`);
-  const schema = getRows(result);
-  schemaCache.set(tableName, schema);
-  return schema;
-}
-
-function pickExistingColumn(schema, candidates) {
-  const names = schema.map((column) => column.name);
-  return candidates.find((candidate) => names.includes(candidate)) || null;
-}
-
-async function getUserColumnMap() {
-  const schema = await getTableSchema("users");
-
-  return {
-    id: pickExistingColumn(schema, ["id", "user_id"]),
-    name: pickExistingColumn(schema, ["name", "full_name", "username", "first_name"]),
-    rfid: pickExistingColumn(schema, ["rfid", "rfid_uid", "uid", "card_uid", "rfid_tag"]),
-  };
-}
-
-async function getSlotQueryParts() {
-  const schema = await getTableSchema("slots");
-  const hasLevel = schema.some((column) => column.name === "level");
-
-  return {
-    hasLevel,
-    select: hasLevel
-      ? "id, slot_number, status, level"
-      : "id, slot_number, status",
-    orderBy: hasLevel
-      ? "ORDER BY COALESCE(level, 999), id"
-      : "ORDER BY id",
-  };
-}
-
-async function canStoreGuestBooking() {
-  const schema = await getTableSchema("bookings");
-  const userIdColumn = schema.find((column) => column.name === "user_id");
-
-  if (!userIdColumn) {
-    return false;
-  }
-
-  return userIdColumn.notnull === 0;
+/**
+ * Checks if a slot has any booking conflict for the given time range.
+ * Logic: (new_start < existing_end) AND (new_end > existing_start)
+ */
+async function hasBookingConflict(slotId, startTime, endTime) {
+  const conflict = await one(
+    `
+      SELECT id FROM bookings
+      WHERE slot_id = ?
+        AND status = 'active'
+        AND (? < end_time AND ? > start_time)
+      LIMIT 1
+    `,
+    [slotId, startTime, endTime]
+  );
+  return !!conflict;
 }
 
 async function releaseExpiredBookings() {
   const now = new Date().toISOString();
 
+  // Mark bookings as expired if end_time has passed and they are still 'active' (not yet occupied)
   const expiredBookings = await all(
     `
       SELECT id, slot_id
       FROM bookings
       WHERE status = 'active'
-        AND expires_at IS NOT NULL
-        AND expires_at <= ?
+        AND end_time < ?
     `,
     [now]
   );
 
-  if (!expiredBookings.length) {
-    return 0;
-  }
-
   for (const booking of expiredBookings) {
     await execute(
-      `
-        UPDATE bookings
-        SET status = 'expired'
-        WHERE id = ?
-      `,
+      `UPDATE bookings SET status = 'expired' WHERE id = ?`,
       [booking.id]
     );
 
+    // Only set slot to available if it was 'booked' (not 'occupied')
     await execute(
-      `
-        UPDATE slots
-        SET status = 'available'
-        WHERE id = ?
-          AND LOWER(status) = 'booked'
-      `,
+      `UPDATE slots SET status = 'available' WHERE id = ? AND status = 'booked'`,
       [booking.slot_id]
     );
   }
 
-  console.log(`[parkingService] Released ${expiredBookings.length} expired booking(s)`);
+  if (expiredBookings.length > 0) {
+    console.log(`[parkingService] Released ${expiredBookings.length} expired booking(s)`);
+  }
   return expiredBookings.length;
 }
 
 async function findUserByRfid(rfid) {
-  const userColumns = await getUserColumnMap();
-
-  if (!userColumns.rfid) {
-    console.warn("[parkingService] No RFID column found in users table. Scan will be treated as guest.");
-    return null;
-  }
-
   return one(
-    `
-      SELECT *
-      FROM users
-      WHERE ${userColumns.rfid} = ?
-      LIMIT 1
-    `,
+    `SELECT * FROM users WHERE rfid = ? LIMIT 1`,
     [rfid]
   );
 }
 
-async function getUserId(user) {
-  if (!user) {
-    return null;
-  }
-
-  const userColumns = await getUserColumnMap();
-  const idColumn = userColumns.id || "id";
-  return user[idColumn];
-}
-
-async function getUserName(user) {
-  if (!user) {
-    return "Guest";
-  }
-
-  const userColumns = await getUserColumnMap();
-  const nameColumn = userColumns.name;
-
-  if (!nameColumn || !user[nameColumn]) {
-    return "User";
-  }
-
-  return String(user[nameColumn]).trim();
-}
-
-async function findCurrentBookingForUser(userId) {
-  if (userId == null) {
-    return null;
-  }
-
+async function findActiveBookingForUser(userId) {
   const now = new Date().toISOString();
-
   return one(
     `
-      SELECT
-        b.id AS booking_id,
-        b.user_id,
-        b.slot_id,
-        b.status AS booking_status,
-        b.expires_at,
-        s.slot_number,
-        s.status AS slot_status,
-        s.level
+      SELECT b.*, s.slot_number, s.level
       FROM bookings b
-      INNER JOIN slots s ON s.id = b.slot_id
+      JOIN slots s ON b.slot_id = s.id
       WHERE b.user_id = ?
-        AND (
-          (b.status = 'active' AND (b.expires_at IS NULL OR b.expires_at > ?))
-          OR b.status = 'occupied'
-        )
-      ORDER BY
-        CASE WHEN b.status = 'occupied' THEN 0 ELSE 1 END,
-        b.expires_at ASC
+        AND b.status = 'active'
+        AND ? BETWEEN b.start_time AND b.end_time
       LIMIT 1
     `,
     [userId, now]
   );
 }
 
-async function getAvailableSlots() {
-  const { select, orderBy } = await getSlotQueryParts();
+async function getAvailableSlotsForTime(startTime, endTime) {
+  const allSlots = await all(`SELECT * FROM slots ORDER BY id ASC`);
+  const available = [];
 
-  return all(
-    `
-      SELECT ${select}
-      FROM slots
-      WHERE LOWER(status) = 'available'
-      ${orderBy}
-    `
-  );
+  for (const slot of allSlots) {
+    // A slot is available if its status is 'available' AND it has no booking conflicts
+    if (normalizeStatus(slot.status) === 'available') {
+      const conflict = await hasBookingConflict(slot.id, startTime, endTime);
+      if (!conflict) {
+        available.push(slot);
+      }
+    }
+  }
+  return available;
 }
 
-async function reserveAvailableSlot(slotId) {
-  const result = await execute(
-    `
-      UPDATE slots
-      SET status = 'booked'
-      WHERE id = ?
-        AND LOWER(status) = 'available'
-    `,
-    [slotId]
-  );
+async function createPreBooking({ userId, slotId, startTime, durationHours }) {
+  await releaseExpiredBookings();
 
-  return result.rowsAffected > 0;
-}
+  const start = new Date(startTime);
+  const end = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
 
-async function createAssignmentBooking({ userId, slotId }) {
-  const allowGuest = await canStoreGuestBooking();
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
 
-  if (userId == null && !allowGuest) {
-    console.warn("[parkingService] Guest booking row skipped because bookings.user_id is NOT NULL");
-    return false;
+  // 1. Check for conflicts
+  const conflict = await hasBookingConflict(slotId, startIso, endIso);
+  if (conflict) {
+    throw new Error("Slot is already booked for the selected time range.");
   }
 
-  const columns = ["slot_id", "status", "expires_at"];
-  const placeholders = ["?", "?", "?"];
-  const args = [slotId, "active", addHoursToNow(1)];
-
-  if (userId != null || allowGuest) {
-    columns.unshift("user_id");
-    placeholders.unshift("?");
-    args.unshift(userId ?? null);
+  // 2. Check if user already has an overlapping booking
+  const userConflict = await one(
+    `
+      SELECT id FROM bookings
+      WHERE user_id = ?
+        AND status = 'active'
+        AND (? < end_time AND ? > start_time)
+      LIMIT 1
+    `,
+    [userId, startIso, endIso]
+  );
+  if (userConflict) {
+    throw new Error("You already have another booking during this time.");
   }
 
   await execute(
     `
-      INSERT INTO bookings (${columns.join(", ")})
-      VALUES (${placeholders.join(", ")})
+      INSERT INTO bookings (user_id, slot_id, start_time, end_time, status)
+      VALUES (?, ?, ?, ?, 'active')
     `,
-    args
+    [userId, slotId, startIso, endIso]
   );
-
-  return true;
-}
-
-async function createPreBooking({ userId, slotId }) {
-  await releaseExpiredBookings();
-
-  const user = await one(
-    `
-      SELECT id
-      FROM users
-      WHERE id = ?
-      LIMIT 1
-    `,
-    [userId]
-  );
-
-  if (!user) {
-    throw new Error("User not found.");
-  }
-
-  const slot = await one(
-    `
-      SELECT id, slot_number, status
-      FROM slots
-      WHERE id = ?
-      LIMIT 1
-    `,
-    [slotId]
-  );
-
-  if (!slot) {
-    throw new Error("Slot not found.");
-  }
-
-  if (normalizeStatus(slot.status) !== "available") {
-    throw new Error(`Slot ${slot.slot_number} is not available for booking.`);
-  }
-
-  const existingUserBooking = await one(
-    `
-      SELECT id
-      FROM bookings
-      WHERE user_id = ?
-        AND (
-          (status = 'active' AND (expires_at IS NULL OR expires_at > ?))
-          OR status = 'occupied'
-        )
-      LIMIT 1
-    `,
-    [userId, new Date().toISOString()]
-  );
-
-  if (existingUserBooking) {
-    throw new Error("User already has an active booking.");
-  }
-
-  const slotLocked = await reserveAvailableSlot(slotId);
-
-  if (!slotLocked) {
-    throw new Error("Slot was just taken by another request.");
-  }
-
-  const expiresAt = addHoursToNow(1);
-
-  try {
-    await execute(
-      `
-        INSERT INTO bookings (user_id, slot_id, status, expires_at)
-        VALUES (?, ?, ?, ?)
-      `,
-      [userId, slotId, "active", expiresAt]
-    );
-  } catch (error) {
-    await execute(
-      `
-        UPDATE slots
-        SET status = 'available'
-        WHERE id = ?
-          AND LOWER(status) = 'booked'
-      `,
-      [slotId]
-    );
-
-    throw error;
-  }
-
-  console.log(`[parkingService] Pre-booking created. user_id=${userId}, slot_id=${slotId}, expires_at=${expiresAt}`);
 
   return {
-    message: `Booking created for ${slot.slot_number}`,
-    slot: slot.slot_number,
-    status: "booked",
-    expires_at: expiresAt,
+    slotId,
+    startTime: startIso,
+    endTime: endIso,
+    status: 'active'
   };
 }
 
@@ -356,58 +164,45 @@ async function assignSlotFromRfid(rfid) {
   await releaseExpiredBookings();
 
   const user = await findUserByRfid(rfid);
-  const userId = await getUserId(user);
-  const userName = await getUserName(user);
+  const now = new Date().toISOString();
+  const oneHourLater = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
-  if (userId != null) {
-    const existingBooking = await findCurrentBookingForUser(userId);
+  if (user) {
+    console.log(`[parkingService] User found: ${user.name} (ID: ${user.id})`);
+    const activeBooking = await findActiveBookingForUser(user.id);
 
-    if (existingBooking) {
-      if (normalizeStatus(existingBooking.slot_status) === "available") {
-        await execute(
-          `
-            UPDATE slots
-            SET status = 'booked'
-            WHERE id = ?
-          `,
-          [existingBooking.slot_id]
-        );
-      }
-
-      console.log(
-        `[parkingService] Assigned pre-booked/current slot ${existingBooking.slot_number} to user_id=${userId}`
-      );
-
+    if (activeBooking) {
+      console.log(`[parkingService] Active booking found for slot ${activeBooking.slot_number}`);
+      await execute(`UPDATE slots SET status = 'booked' WHERE id = ?`, [activeBooking.slot_id]);
       return {
-        message: `Welcome ${userName}`,
-        slot: existingBooking.slot_number,
+        message: `Welcome ${user.name}`,
+        slot: activeBooking.slot_number,
         status: "assigned",
       };
     }
+  } else {
+    console.log(`[parkingService] RFID ${rfid} not linked to any user. Treating as guest.`);
   }
 
-  const availableSlots = await getAvailableSlots();
+  // No active booking or guest user
+  const availableSlots = await getAvailableSlotsForTime(now, oneHourLater);
 
-  for (const slot of availableSlots) {
-    const locked = await reserveAvailableSlot(slot.id);
+  if (availableSlots.length > 0) {
+    const selectedSlot = availableSlots[0]; // Serial order
+    console.log(`[parkingService] Assigning available slot ${selectedSlot.slot_number}`);
 
-    if (!locked) {
-      continue;
-    }
-
-    try {
-      await createAssignmentBooking({ userId, slotId: slot.id });
-    } catch (error) {
-      console.error("[parkingService] Failed to create assignment booking row:", error.message);
-    }
-
-    console.log(
-      `[parkingService] Assigned available slot ${slot.slot_number} to ${userId != null ? `user_id=${userId}` : "guest"}`
+    await execute(`UPDATE slots SET status = 'booked' WHERE id = ?`, [selectedSlot.id]);
+    await execute(
+      `
+        INSERT INTO bookings (user_id, slot_id, start_time, end_time, status)
+        VALUES (?, ?, ?, ?, 'active')
+      `,
+      [user ? user.id : null, selectedSlot.id, now, oneHourLater]
     );
 
     return {
-      message: userId != null ? `Welcome ${userName}` : "Welcome",
-      slot: slot.slot_number,
+      message: user ? `Welcome ${user.name}` : "Welcome Guest",
+      slot: selectedSlot.slot_number,
       status: "assigned",
     };
   }
@@ -423,95 +218,46 @@ async function assignSlotFromRfid(rfid) {
 async function updateSlotFromIr({ slotId, occupied }) {
   await releaseExpiredBookings();
 
-  const slot = await one(
-    `
-      SELECT id, slot_number, status
-      FROM slots
-      WHERE id = ?
-      LIMIT 1
-    `,
-    [slotId]
-  );
-
-  if (!slot) {
-    throw new Error("Slot not found.");
-  }
+  const slot = await one(`SELECT * FROM slots WHERE id = ?`, [slotId]);
+  if (!slot) throw new Error("Slot not found.");
 
   if (occupied) {
-    await execute(
-      `
-        UPDATE slots
-        SET status = 'occupied'
-        WHERE id = ?
-      `,
-      [slotId]
-    );
-
+    await execute(`UPDATE slots SET status = 'occupied' WHERE id = ?`, [slotId]);
+    // Mark the overlapping active booking as occupied
+    const now = new Date().toISOString();
     await execute(
       `
         UPDATE bookings
         SET status = 'occupied'
         WHERE slot_id = ?
           AND status = 'active'
+          AND ? BETWEEN start_time AND end_time
+      `,
+      [slotId, now]
+    );
+  } else {
+    await execute(`UPDATE slots SET status = 'available' WHERE id = ?`, [slotId]);
+    // Mark current occupied booking as completed
+    await execute(
+      `
+        UPDATE bookings
+        SET status = 'completed'
+        WHERE slot_id = ?
+          AND status = 'occupied'
       `,
       [slotId]
     );
-
-    console.log(`[parkingService] IR update: slot ${slot.slot_number} -> occupied`);
-
-    return {
-      message: `Slot ${slot.slot_number} marked occupied`,
-      slot: slot.slot_number,
-      status: "occupied",
-    };
   }
 
-  await execute(
-    `
-      UPDATE slots
-      SET status = 'available'
-      WHERE id = ?
-    `,
-    [slotId]
-  );
-
-  await execute(
-    `
-      UPDATE bookings
-      SET status = 'completed'
-      WHERE slot_id = ?
-        AND status IN ('active', 'occupied')
-    `,
-    [slotId]
-  );
-
-  console.log(`[parkingService] IR update: slot ${slot.slot_number} -> available`);
-
   return {
-    message: `Slot ${slot.slot_number} marked available`,
     slot: slot.slot_number,
-    status: "available",
+    status: occupied ? "occupied" : "available"
   };
 }
 
 async function getAllSlots() {
   await releaseExpiredBookings();
-
-  const { select, orderBy, hasLevel } = await getSlotQueryParts();
-
-  const slots = await all(
-    `
-      SELECT ${select}
-      FROM slots
-      ${orderBy}
-    `
-  );
-
-  return slots.map((slot) => ({
-    ...slot,
-    level: hasLevel ? slot.level : 1,
-    status: normalizeStatus(slot.status),
-  }));
+  return all(`SELECT * FROM slots ORDER BY id ASC`);
 }
 
 module.exports = {
@@ -519,4 +265,5 @@ module.exports = {
   createPreBooking,
   getAllSlots,
   updateSlotFromIr,
+  hasBookingConflict
 };
