@@ -8,22 +8,7 @@ router.use(authenticateToken, requireAdmin);
 
 router.get('/slots', async (req, res) => {
   try {
-    const now = new Date().toISOString();
-    const result = await client.execute({
-      sql: `
-        SELECT ps.id, ps.slot_number, ps.level,
-               b.start_time, b.expires_at,
-               CASE 
-                 WHEN b.id IS NOT NULL AND b.start_time <= ? AND b.expires_at > ? THEN 'booked'
-                 ELSE 'available'
-               END as status
-        FROM parking_slots ps
-        LEFT JOIN bookings b ON ps.id = b.slot_id AND b.status = 'active'
-             AND b.start_time <= ? AND b.expires_at > ?
-        ORDER BY ps.id
-      `,
-      args: [now, now, now, now]
-    });
+    const result = await client.execute("SELECT * FROM slots ORDER BY id");
     return res.status(200).json(result.rows);
   } catch (err) {
     console.error('Admin get slots error:', err);
@@ -34,12 +19,12 @@ router.get('/slots', async (req, res) => {
 router.get('/bookings', async (req, res) => {
   try {
     const result = await client.execute(`
-      SELECT b.id, u.name AS user_name, u.email AS user_email,
-             ps.slot_number, ps.level, b.booked_at, b.start_time, b.duration_hours, b.expires_at, b.status
+      SELECT b.*, u.name AS user_name, u.email AS user_email,
+             s.slot_number, s.level
       FROM bookings b
       JOIN users u ON b.user_id = u.id
-      JOIN parking_slots ps ON b.slot_id = ps.id
-      ORDER BY b.booked_at DESC
+      JOIN slots s ON b.slot_id = s.id
+      ORDER BY b.start_time DESC
     `);
     return res.status(200).json(result.rows);
   } catch (err) {
@@ -50,31 +35,29 @@ router.get('/bookings', async (req, res) => {
 
 router.get('/stats', async (req, res) => {
   try {
-    const totalResult = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots`);
-    const availResult = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots WHERE status = 'available'`);
-    const bookedResult = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots WHERE status = 'booked'`);
+    const totalResult = await client.execute(`SELECT COUNT(*) AS count FROM slots`);
+    const availResult = await client.execute(`SELECT COUNT(*) AS count FROM slots WHERE LOWER(status) = 'available'`);
+    const bookedResult = await client.execute(`SELECT COUNT(*) AS count FROM slots WHERE LOWER(status) = 'booked'`);
+    const occupiedResult = await client.execute(`SELECT COUNT(*) AS count FROM slots WHERE LOWER(status) = 'occupied'`);
 
-    const l1Total = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots WHERE level = 1`);
-    const l1Avail = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots WHERE level = 1 AND status = 'available'`);
-    const l1Booked = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots WHERE level = 1 AND status = 'booked'`);
-
-    const l2Total = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots WHERE level = 2`);
-    const l2Avail = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots WHERE level = 2 AND status = 'available'`);
-    const l2Booked = await client.execute(`SELECT COUNT(*) AS count FROM parking_slots WHERE level = 2 AND status = 'booked'`);
+    const l1Total = await client.execute(`SELECT COUNT(*) AS count FROM slots WHERE level = 1`);
+    const l1Avail = await client.execute(`SELECT COUNT(*) AS count FROM slots WHERE level = 1 AND LOWER(status) = 'available'`);
+    
+    const l2Total = await client.execute(`SELECT COUNT(*) AS count FROM slots WHERE level = 2`);
+    const l2Avail = await client.execute(`SELECT COUNT(*) AS count FROM slots WHERE level = 2 AND LOWER(status) = 'available'`);
 
     return res.status(200).json({
       total: Number(totalResult.rows[0].count),
       available: Number(availResult.rows[0].count),
       booked: Number(bookedResult.rows[0].count),
+      occupied: Number(occupiedResult.rows[0].count),
       level1: {
         total: Number(l1Total.rows[0].count),
-        available: Number(l1Avail.rows[0].count),
-        booked: Number(l1Booked.rows[0].count)
+        available: Number(l1Avail.rows[0].count)
       },
       level2: {
         total: Number(l2Total.rows[0].count),
-        available: Number(l2Avail.rows[0].count),
-        booked: Number(l2Booked.rows[0].count)
+        available: Number(l2Avail.rows[0].count)
       }
     });
   } catch (err) {
