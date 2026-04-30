@@ -1,127 +1,131 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import api from '../utils/api';
 
-const itemVariants = {
-  initial: { opacity: 0, scale: 0.9 },
-  animate: { opacity: 1, scale: 1, transition: { duration: 0.3 } },
-};
-
-function getTimeRemaining(expiresAt) {
-  const now = new Date();
-  const expires = new Date(expiresAt);
-  const diff = expires - now;
-  if (diff <= 0) return 'Expired';
-  if (diff < 5 * 60 * 1000) return 'Expiring soon';
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-  if (hours > 0) return `${hours}h ${minutes}m remaining`;
-  return `${minutes}m remaining`;
-}
-
-export default function SlotCard({ slot, onBook, readOnly = false }) {
-  const [showPicker, setShowPicker] = useState(false);
-  const [duration, setDuration] = useState('1');
-  const [startTime, setStartTime] = useState(() => {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    return now.toISOString().slice(0, 16);
+export default function SlotCard({ slot, onBookingCreated }) {
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    start_time: '',
+    duration: '1'
   });
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
 
-  const isAvailable = slot.status === 'available';
-  const borderColor = isAvailable ? 'border-green shadow-[0_0_15px_rgba(34,197,94,0.15)]' : 'border-red shadow-[0_0_15px_rgba(239,68,68,0.15)]';
+  const isOccupied = slot.status === 'occupied';
+  const isBooked = slot.status === 'booked';
+  
+  // Disable if occupied or booked soon (simplified logic for UI)
+  const isDisabled = isOccupied || (isBooked && slot.prebooked_until && new Date(slot.prebooked_until) > new Date());
 
-  const handleConfirm = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setLoading(true);
-    await onBook(slot.id, parseInt(duration), startTime);
-    setLoading(false);
-    setShowPicker(false);
+    setMessage('');
+    try {
+      const res = await api.post('/bookings/create', {
+        ...formData,
+        slot_id: slot.id
+      });
+      setMessage({ type: 'success', text: 'Prebooked!' });
+      if (onBookingCreated) onBookingCreated();
+      // Clear success message after 3 seconds
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (slot.status) {
+      case 'available': return 'bg-green-500';
+      case 'booked': return 'bg-blue-500';
+      case 'occupied': return 'bg-red-500';
+      default: return 'bg-slate-500';
+    }
   };
 
   return (
-    <motion.div
-      variants={itemVariants}
-      className={`bg-navy-light border-2 ${borderColor} rounded-card p-5 text-center hover:translate-y-[-2px] transition-transform`}
-    >
-      <div className="text-xl font-bold text-white mb-1">{slot.slot_number}</div>
-      <span className="inline-block bg-blue text-white text-[0.65rem] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider">
-        L{slot.level}
-      </span>
-      <div className={`text-xs uppercase tracking-widest mt-2 mb-3 font-semibold ${isAvailable ? 'text-green' : 'text-red'}`}>
-        {isAvailable ? 'Available' : 'Occupied'}
+    <div className={`p-6 rounded-2xl border transition-all duration-300 shadow-lg ${
+      isOccupied ? 'bg-red-500/5 border-red-500/20' : 
+      isBooked ? 'bg-blue-500/5 border-blue-500/20' : 
+      'bg-white dark:bg-navy-light border-slate-200 dark:border-slate-700'
+    }`}>
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h3 className="text-2xl font-bold dark:text-white">Slot {slot.slot_number}</h3>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">Level {slot.level}</p>
+        </div>
+        <span className={`px-3 py-1 rounded-full text-white text-xs font-bold uppercase tracking-wider ${getStatusColor()}`}>
+          {slot.status}
+        </span>
       </div>
 
-      {!isAvailable && slot.expires_at && (
-        <div className="text-xs text-slate-400 italic">{getTimeRemaining(slot.expires_at)}</div>
-      )}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-1">Date</label>
+            <input
+              type="date"
+              required
+              className="w-full bg-slate-50 dark:bg-navy-medium border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:border-blue transition-colors"
+              value={formData.date}
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-1">Start Time</label>
+            <input
+              type="time"
+              required
+              className="w-full bg-slate-50 dark:bg-navy-medium border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:border-blue transition-colors"
+              value={formData.start_time}
+              onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-1">Duration (Hours)</label>
+          <input
+            type="number"
+            min="1"
+            max="24"
+            required
+            className="w-full bg-slate-50 dark:bg-navy-medium border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:border-blue transition-colors"
+            value={formData.duration}
+            onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+          />
+        </div>
 
-      {isAvailable && !readOnly && !showPicker && (
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={() => setShowPicker(true)}
-          className="mt-2 px-5 py-2 bg-green hover:bg-green-dark text-white text-sm font-semibold rounded-lg transition-colors w-full"
+        <button
+          type="submit"
+          disabled={loading || isDisabled}
+          className={`w-full font-bold py-3 rounded-xl transition-all duration-300 transform active:scale-95 shadow-md ${
+            isDisabled 
+            ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed' 
+            : 'bg-blue hover:bg-blue-600 text-white hover:shadow-blue-500/25'
+          }`}
         >
-          Book
-        </motion.button>
-      )}
-
-      <AnimatePresence>
-        {showPicker && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden"
-          >
-            <div className="mt-3 pt-3 border-t border-slate-700 text-left">
-              <label className="text-[0.7rem] text-slate-400 block mb-1">Start Time</label>
-              <input
-                type="datetime-local"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="w-full p-2 bg-navy border border-slate-600 rounded-lg text-white text-xs mb-3 focus:border-blue focus:outline-none"
-              />
-
-              <label className="text-[0.7rem] text-slate-400 block mb-1">Duration</label>
-              <select
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-                className="w-full p-2 bg-navy border border-slate-600 rounded-lg text-white text-xs mb-4 focus:border-blue focus:outline-none"
-              >
-                <option value="1">1 Hour</option>
-                <option value="2">2 Hours</option>
-                <option value="3">3 Hours</option>
-                <option value="4">4 Hours</option>
-                <option value="6">6 Hours</option>
-                <option value="8">8 Hours</option>
-                <option value="12">12 Hours</option>
-                <option value="24">24 Hours</option>
-              </select>
-              <div className="flex gap-2">
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={handleConfirm}
-                  disabled={loading}
-                  className="flex-1 py-2 bg-blue hover:bg-blue-hover text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {loading ? 'Booking...' : 'Confirm'}
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => setShowPicker(false)}
-                  className="flex-1 py-2 bg-red hover:bg-red-dark text-white text-sm font-semibold rounded-lg transition-colors"
-                >
-                  Cancel
-                </motion.button>
-              </div>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2">
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+              <span>Processing...</span>
             </div>
-          </motion.div>
+          ) : (
+            'Prebook Now'
+          )}
+        </button>
+
+        {message && (
+          <div className={`mt-2 p-3 rounded-lg text-center text-xs font-medium animate-fade-in ${
+            message.type === 'success' 
+            ? 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20' 
+            : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+          }`}>
+            {message.text}
+          </div>
         )}
-      </AnimatePresence>
-    </motion.div>
+      </form>
+    </div>
   );
 }

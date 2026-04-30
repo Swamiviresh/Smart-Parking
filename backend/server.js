@@ -11,6 +11,7 @@ const slotRoutes = require("./routes/slots");
 const bookingRoutes = require("./routes/bookings");
 const authRoutes = require("./routes/auth");
 const adminRoutes = require("./routes/admin");
+const userRoutes = require("./routes/users");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +31,7 @@ app.use("/api/slots", slotRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/users", userRoutes);
 
 // Serve frontend (Vite build)
 app.use(express.static(path.join(__dirname, "..", "frontend", "dist")));

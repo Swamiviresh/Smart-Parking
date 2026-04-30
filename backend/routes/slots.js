@@ -20,22 +20,22 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/update-from-ir", async (req, res) => {
+router.post("/update-status", async (req, res) => {
   try {
     const slotId = Number(req.body?.slot_id);
-    const occupied = req.body?.occupied;
+    const status = req.body?.status; // 'occupied' or 'available'
 
-    if (!Number.isInteger(slotId) || typeof occupied !== "boolean") {
+    if (!Number.isInteger(slotId) || !status) {
       return res.status(400).json({
-        message: "slot_id must be an integer and occupied must be a boolean.",
+        message: "slot_id must be an integer and status must be provided.",
       });
     }
 
-    console.log(`[slots] POST /api/slots/update-from-ir -> slot_id=${slotId}, occupied=${occupied}`);
+    console.log(`[slots] POST /api/slots/update-status -> slot_id=${slotId}, status=${status}`);
 
     const result = await updateSlotFromIr({
       slotId,
-      occupied,
+      status,
     });
 
     return res.status(200).json(result);
@@ -43,7 +43,7 @@ router.post("/update-from-ir", async (req, res) => {
     console.error("[slots] IR update error:", error);
 
     return res.status(500).json({
-      message: error.message || "Failed to update slot from IR sensor.",
+      message: error.message || "Failed to update slot status.",
     });
   }
 });

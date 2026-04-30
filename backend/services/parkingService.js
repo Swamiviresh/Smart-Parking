@@ -1,5 +1,4 @@
 const { client: db } = require("../db/database");
-const schemaCache = new Map();
 
 async function execute(sql, args = []) {
   return db.execute({ sql, args });
@@ -61,11 +60,7 @@ async function releaseExpiredBookings() {
       [booking.id]
     );
 
-    // Only set slot to available if it was 'booked' (not 'occupied')
-    await execute(
-      `UPDATE slots SET status = 'available' WHERE id = ? AND status = 'booked'`,
-      [booking.slot_id]
-    );
+    // No direct status update here anymore as we calculate it in getAllSlots
   }
 
   if (expiredBookings.length > 0) {
@@ -76,7 +71,7 @@ async function releaseExpiredBookings() {
 
 async function findUserByRfid(rfid) {
   return one(
-    `SELECT * FROM users WHERE rfid = ? LIMIT 1`,
+    `SELECT * FROM users WHERE rfid_tag = ? LIMIT 1`,
     [rfid]
   );
 }
@@ -102,12 +97,12 @@ async function getAvailableSlotsForTime(startTime, endTime) {
   const available = [];
 
   for (const slot of allSlots) {
-    // A slot is available if its status is 'available' AND it has no booking conflicts
-    if (normalizeStatus(slot.status) === 'available') {
-      const conflict = await hasBookingConflict(slot.id, startTime, endTime);
-      if (!conflict) {
-        available.push(slot);
-      }
+    // Check if slot is currently occupied by IR
+    if (slot.status === 'occupied') continue;
+
+    const conflict = await hasBookingConflict(slot.id, startTime, endTime);
+    if (!conflict) {
+      available.push(slot);
     }
   }
   return available;
@@ -173,10 +168,11 @@ async function assignSlotFromRfid(rfid) {
 
     if (activeBooking) {
       console.log(`[parkingService] Active booking found for slot ${activeBooking.slot_number}`);
-      await execute(`UPDATE slots SET status = 'booked' WHERE id = ?`, [activeBooking.slot_id]);
+      // Slot will be marked occupied by IR sensor later. 
+      // For now we return the assignment.
       return {
         message: `Welcome ${user.name}`,
-        slot: activeBooking.slot_number,
+        slot: Number(activeBooking.slot_number.replace('P', '')),
         status: "assigned",
       };
     }
@@ -191,7 +187,6 @@ async function assignSlotFromRfid(rfid) {
     const selectedSlot = availableSlots[0]; // Serial order
     console.log(`[parkingService] Assigning available slot ${selectedSlot.slot_number}`);
 
-    await execute(`UPDATE slots SET status = 'booked' WHERE id = ?`, [selectedSlot.id]);
     await execute(
       `
         INSERT INTO bookings (user_id, slot_id, start_time, end_time, status)
@@ -201,28 +196,31 @@ async function assignSlotFromRfid(rfid) {
     );
 
     return {
-      message: user ? `Welcome ${user.name}` : "Welcome Guest",
-      slot: selectedSlot.slot_number,
+      message: user ? `Welcome ${user.name}` : "Welcome",
+      slot: Number(selectedSlot.slot_number.replace('P', '')),
       status: "assigned",
     };
   }
 
   console.log("[parkingService] Parking Full");
   return {
-    message: "Parking Full",
+    message: "FULL",
     slot: null,
     status: "full",
   };
 }
 
-async function updateSlotFromIr({ slotId, occupied }) {
+async function updateSlotFromIr({ slotId, status }) {
   await releaseExpiredBookings();
 
   const slot = await one(`SELECT * FROM slots WHERE id = ?`, [slotId]);
   if (!slot) throw new Error("Slot not found.");
 
-  if (occupied) {
-    await execute(`UPDATE slots SET status = 'occupied' WHERE id = ?`, [slotId]);
+  const isOccupied = status === 'occupied';
+
+  await execute(`UPDATE slots SET status = ? WHERE id = ?`, [status, slotId]);
+
+  if (isOccupied) {
     // Mark the overlapping active booking as occupied
     const now = new Date().toISOString();
     await execute(
@@ -236,7 +234,6 @@ async function updateSlotFromIr({ slotId, occupied }) {
       [slotId, now]
     );
   } else {
-    await execute(`UPDATE slots SET status = 'available' WHERE id = ?`, [slotId]);
     // Mark current occupied booking as completed
     await execute(
       `
@@ -251,13 +248,37 @@ async function updateSlotFromIr({ slotId, occupied }) {
 
   return {
     slot: slot.slot_number,
-    status: occupied ? "occupied" : "available"
+    status: status
   };
 }
 
 async function getAllSlots() {
   await releaseExpiredBookings();
-  return all(`SELECT * FROM slots ORDER BY id ASC`);
+  const slots = await all(`SELECT * FROM slots ORDER BY id ASC`);
+  const now = new Date().toISOString();
+
+  const enrichedSlots = await Promise.all(slots.map(async (slot) => {
+    // Find active booking
+    const booking = await one(
+      `SELECT * FROM bookings WHERE slot_id = ? AND status IN ('active', 'occupied') AND ? BETWEEN start_time AND end_time LIMIT 1`,
+      [slot.id, now]
+    );
+
+    let calculatedStatus = 'available';
+    if (slot.status === 'occupied') {
+      calculatedStatus = 'occupied';
+    } else if (booking) {
+      calculatedStatus = 'booked';
+    }
+
+    return {
+      ...slot,
+      status: calculatedStatus,
+      prebooked_until: booking ? booking.end_time : null
+    };
+  }));
+
+  return enrichedSlots;
 }
 
 module.exports = {

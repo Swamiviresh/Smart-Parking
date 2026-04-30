@@ -23,7 +23,7 @@ export default function Profile() {
       const res = await api.get('/auth/me');
       console.log("[Profile] User profile received:", res.data);
       setUser(res.data);
-      setRfid(res.data.rfid || '');
+      setRfid(res.data.rfid_tag || '');
     } catch (err) {
       console.error("[Profile] Failed to fetch user profile:", err);
       setError(err.response?.data?.error || 'Failed to load profile. Please make sure you are logged in.');
@@ -37,11 +37,11 @@ export default function Profile() {
     setActionLoading(true);
     setMessage('');
     try {
-      await api.post('/auth/update-rfid', { rfid });
+      await api.put('/users/rfid', { rfid_tag: rfid });
       setMessage({ type: 'success', text: 'RFID updated successfully' });
       fetchUser();
     } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to update RFID' });
+      setMessage({ type: 'error', text: err.response?.data?.message || err.response?.data?.error || 'Failed to update RFID' });
     } finally {
       setActionLoading(false);
     }
